@@ -10,6 +10,7 @@
     <param name="discovery_rate" value="0.05"/>
     <param name="estimation_rate" value="0.1"/>
     <param name="estimation_confidence" value="1.0"/>
+    <param name="autostart" value="false"/>
   </node>
 </group>
 </launch>

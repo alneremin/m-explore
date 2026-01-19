@@ -48,6 +48,7 @@ MapMerge::MapMerge() : subscriptions_size_(0), active_(true)
 {
   ros::NodeHandle private_nh("~");
   std::string frame_id;
+  bool autostart;
 
   private_nh.param("merging_rate", merging_rate_, 4.0);
   private_nh.param("discovery_rate", discovery_rate_, 0.05);
@@ -60,13 +61,14 @@ MapMerge::MapMerge() : subscriptions_size_(0), active_(true)
   private_nh.param<std::string>("robot_namespace", robot_namespace_, "");
   private_nh.param<std::string>("merged_map_topic", merged_map_topic_, "map");
   private_nh.param<std::string>("world_frame", world_frame_, "world");
+  private_nh.param<bool>("autostart", autostart, false);
 
   /* publishing */
   merged_map_publisher_ =
       node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic_, 50, true);
 
   command_service_ = node_.advertiseService("/map_merge/command_service", &MapMerge::DoCommand, this);
-
+  if (autostart) Start();
 }
 
 /*
@@ -380,48 +382,47 @@ void MapMerge::executeposeEstimation()
   }
 }
 
-/*
- * spin()
- */
-void MapMerge::spin()
+void MapMerge::Start()
 {
-  ros::spinOnce();
-  threads_.emplace_back([this]() { executemapMerging(); });
-  threads_.emplace_back([this]() { executetopicSubscribing(); });
-  threads_.emplace_back([this]() { executeposeEstimation(); });
-  ros::spin();
+    setActive(true);
+    if (!threads_.size())
+    {
+        threads_.emplace_back([this]() { executemapMerging(); });
+        threads_.emplace_back([this]() { executetopicSubscribing(); });
+        threads_.emplace_back([this]() { executeposeEstimation(); });
+    }
+}
+
+void MapMerge::Stop()
+{
+    setActive(false);
+    robots_.clear();
+    subscriptions_.clear();
+    size_t subscriptions_size_ = 0;
+    pipeline_ = combine_grids::MergingPipeline();
+    while (threads_.size())
+    {
+        threads_.back().join();
+        threads_.pop_back();
+    }
+    merged_map_publisher_ = 
+    node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic_, 50, true);
 }
 
 bool MapMerge::DoCommand(multirobot_map_merge::MapMergeCommand::Request  &req,
                          multirobot_map_merge::MapMergeCommand::Response &res)
 {
-    auto command = static_cast<Command>(req.command);
-    if (command == RESET_MAP_MERGE)
+    auto command = static_cast<MapMergeCommand>(req.command);
+    if (command == STOP_MAP_MERGE)
     {
-        setActive(false);
-        robots_.clear();
-        subscriptions_.clear();
-        size_t subscriptions_size_ = 0;
-        pipeline_ = combine_grids::MergingPipeline();
-        while (threads_.size())
-        {
-            threads_.back().join();
-            threads_.pop_back();
-        }
-        merged_map_publisher_ =
-      node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic_, 50, true);
+        Stop();
+        ROS_INFO("Map merging stopped.");
         res.status = 0;
     }
     else if (command == START_MAP_MERGE)
     {
-        setActive(true);
-        if (!threads_.size())
-        {
-            threads_.emplace_back([this]() { executemapMerging(); });
-            threads_.emplace_back([this]() { executetopicSubscribing(); });
-            threads_.emplace_back([this]() { executeposeEstimation(); });
-        }
-        
+        Start();
+        ROS_INFO("Map merging restored.");
         res.status = 0;
     }
     else
@@ -443,6 +444,6 @@ int main(int argc, char** argv)
     ros::console::notifyLoggerLevelsChanged();
   }
   map_merge::MapMerge map_merging;
-  map_merging.spin();
+  ros::spin();
   return 0;
 }

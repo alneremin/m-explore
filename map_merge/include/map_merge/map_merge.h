@@ -57,10 +57,10 @@
 namespace map_merge
 {
 
-enum Command
+enum MapMergeCommand
 {
     START_MAP_MERGE = 0,
-    RESET_MAP_MERGE = 1
+    STOP_MAP_MERGE = 1
 };
 
 struct MapSubscription {
@@ -120,7 +120,6 @@ private:
 public:
   MapMerge();
 
-  void spin();
   void executetopicSubscribing();
   void executemapMerging();
   void executeposeEstimation();
@@ -137,6 +136,9 @@ public:
                  multirobot_map_merge::MapMergeCommand::Response &res);
   
   void setActive(bool value) { active_ = value; }
+
+  void Start();
+  void Stop();
 };
 
 }  // namespace map_merge
