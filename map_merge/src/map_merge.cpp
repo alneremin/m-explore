@@ -44,11 +44,10 @@
 
 namespace map_merge
 {
-MapMerge::MapMerge() : subscriptions_size_(0)
+MapMerge::MapMerge() : subscriptions_size_(0), active_(true)
 {
   ros::NodeHandle private_nh("~");
   std::string frame_id;
-  std::string merged_map_topic;
 
   private_nh.param("merging_rate", merging_rate_, 4.0);
   private_nh.param("discovery_rate", discovery_rate_, 0.05);
@@ -59,12 +58,15 @@ MapMerge::MapMerge() : subscriptions_size_(0)
   private_nh.param<std::string>("robot_map_updates_topic",
                                 robot_map_updates_topic_, "map_updates");
   private_nh.param<std::string>("robot_namespace", robot_namespace_, "");
-  private_nh.param<std::string>("merged_map_topic", merged_map_topic, "map");
+  private_nh.param<std::string>("merged_map_topic", merged_map_topic_, "map");
   private_nh.param<std::string>("world_frame", world_frame_, "world");
 
   /* publishing */
   merged_map_publisher_ =
-      node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic, 50, true);
+      node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic_, 50, true);
+
+  command_service_ = node_.advertiseService("/map_merge/command_service", &MapMerge::DoCommand, this);
+
 }
 
 /*
@@ -351,7 +353,7 @@ bool MapMerge::getInitPose(const std::string& name,
 void MapMerge::executemapMerging()
 {
   ros::Rate r(merging_rate_);
-  while (node_.ok()) {
+  while (node_.ok() && active_) {
     mapMerging();
     r.sleep();
   }
@@ -360,7 +362,7 @@ void MapMerge::executemapMerging()
 void MapMerge::executetopicSubscribing()
 {
   ros::Rate r(discovery_rate_);
-  while (node_.ok()) {
+  while (node_.ok() && active_) {
     topicSubscribing();
     r.sleep();
   }
@@ -372,7 +374,7 @@ void MapMerge::executeposeEstimation()
     return;
 
   ros::Rate r(estimation_rate_);
-  while (node_.ok()) {
+  while (node_.ok() && active_) {
     poseEstimation();
     r.sleep();
   }
@@ -384,13 +386,50 @@ void MapMerge::executeposeEstimation()
 void MapMerge::spin()
 {
   ros::spinOnce();
-  std::thread merging_thr([this]() { executemapMerging(); });
-  std::thread subscribing_thr([this]() { executetopicSubscribing(); });
-  std::thread estimation_thr([this]() { executeposeEstimation(); });
+  threads_.emplace_back([this]() { executemapMerging(); });
+  threads_.emplace_back([this]() { executetopicSubscribing(); });
+  threads_.emplace_back([this]() { executeposeEstimation(); });
   ros::spin();
-  estimation_thr.join();
-  merging_thr.join();
-  subscribing_thr.join();
+}
+
+bool MapMerge::DoCommand(multirobot_map_merge::MapMergeCommand::Request  &req,
+                         multirobot_map_merge::MapMergeCommand::Response &res)
+{
+    auto command = static_cast<Command>(req.command);
+    if (command == RESET_MAP_MERGE)
+    {
+        setActive(false);
+        robots_.clear();
+        subscriptions_.clear();
+        size_t subscriptions_size_ = 0;
+        pipeline_ = combine_grids::MergingPipeline();
+        while (threads_.size())
+        {
+            threads_.back().join();
+            threads_.pop_back();
+        }
+        merged_map_publisher_ =
+      node_.advertise<nav_msgs::OccupancyGrid>(merged_map_topic_, 50, true);
+        res.status = 0;
+    }
+    else if (command == START_MAP_MERGE)
+    {
+        setActive(true);
+        if (!threads_.size())
+        {
+            threads_.emplace_back([this]() { executemapMerging(); });
+            threads_.emplace_back([this]() { executetopicSubscribing(); });
+            threads_.emplace_back([this]() { executeposeEstimation(); });
+        }
+        
+        res.status = 0;
+    }
+    else
+    {
+        res.status = 1;
+        ROS_WARN("Unknown command: %ld", req.command);
+    }
+    return true;
 }
 
 }  // namespace map_merge

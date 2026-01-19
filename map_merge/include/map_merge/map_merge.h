@@ -50,8 +50,19 @@
 #include <ros/ros.h>
 #include <boost/thread.hpp>
 
+#include <std_msgs/Int64.h>
+
+#include "multirobot_map_merge/MapMergeCommand.h"
+
 namespace map_merge
 {
+
+enum Command
+{
+    START_MAP_MERGE = 0,
+    RESET_MAP_MERGE = 1
+};
+
 struct MapSubscription {
   // protects consistency of writable_map and readonly_map
   // also protects reads and writes of shared_ptrs
@@ -80,6 +91,11 @@ private:
   std::string robot_namespace_;
   std::string world_frame_;
   bool have_initial_poses_;
+
+  bool active_;
+  std::string merged_map_topic_;
+  std::vector<std::thread> threads_;
+  ros::ServiceServer command_service_;
 
   // publishing
   ros::Publisher merged_map_publisher_;
@@ -116,6 +132,11 @@ public:
    * @details Relevant only if initial poses are not known
    */
   void poseEstimation();
+
+  bool DoCommand(multirobot_map_merge::MapMergeCommand::Request  &req,
+                 multirobot_map_merge::MapMergeCommand::Response &res);
+  
+  void setActive(bool value) { active_ = value; }
 };
 
 }  // namespace map_merge

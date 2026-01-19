@@ -9,6 +9,8 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   roscpp
   tf2_geometry_msgs
+  std_msgs
+  message_generation
 )
 
 find_package(Boost REQUIRED COMPONENTS thread)
@@ -26,7 +28,16 @@ endif()
 ################################################
 ## Declare ROS messages, services and actions ##
 ################################################
-# we don't have any
+
+add_service_files(
+  FILES
+  MapMergeCommand.srv
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -38,6 +49,7 @@ catkin_package(
     nav_msgs
     roscpp
     tf2_geometry_msgs
+    message_runtime
   DEPENDS
     OpenCV
 )
