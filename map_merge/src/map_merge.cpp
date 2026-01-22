@@ -49,8 +49,9 @@ MapMerge::MapMerge() : subscriptions_size_(0), active_(true)
   ros::NodeHandle private_nh("~");
   std::string frame_id;
   bool autostart;
-
+  
   private_nh.param("merging_rate", merging_rate_, 4.0);
+  private_nh.param("check_active_rate", check_active_rate_, 10.0);
   private_nh.param("discovery_rate", discovery_rate_, 0.05);
   private_nh.param("estimation_rate", estimation_rate_, 0.5);
   private_nh.param("known_init_poses", have_initial_poses_, true);
@@ -354,20 +355,30 @@ bool MapMerge::getInitPose(const std::string& name,
  */
 void MapMerge::executemapMerging()
 {
-  ros::Rate r(merging_rate_);
+  execute(merging_rate_, 
+    [this](const ros::TimerEvent&){ this->mapMerging(); });
+}
+
+/*
+ * execute()
+ */
+template<typename FunctionType>
+void MapMerge::execute(double rate, FunctionType func)
+{
+  auto duration = ros::Duration(1.0 / rate);
+  ros::Timer timer = node_.createTimer(duration, func, false);
+
+  ros::Rate r(check_active_rate_);
   while (node_.ok() && active_) {
-    mapMerging();
     r.sleep();
   }
+  timer.stop();
 }
 
 void MapMerge::executetopicSubscribing()
 {
-  ros::Rate r(discovery_rate_);
-  while (node_.ok() && active_) {
-    topicSubscribing();
-    r.sleep();
-  }
+  execute(discovery_rate_, 
+    [this](const ros::TimerEvent&){ this->topicSubscribing(); });
 }
 
 void MapMerge::executeposeEstimation()
@@ -375,11 +386,8 @@ void MapMerge::executeposeEstimation()
   if (have_initial_poses_)
     return;
 
-  ros::Rate r(estimation_rate_);
-  while (node_.ok() && active_) {
-    poseEstimation();
-    r.sleep();
-  }
+  execute(estimation_rate_, 
+    [this](const ros::TimerEvent&){ this->poseEstimation(); });
 }
 
 void MapMerge::Start()
@@ -412,6 +420,7 @@ void MapMerge::Stop()
 bool MapMerge::DoCommand(multirobot_map_merge::MapMergeCommand::Request  &req,
                          multirobot_map_merge::MapMergeCommand::Response &res)
 {
+    ROS_DEBUG("Command '%ld' is obtained.", req.command);
     auto command = static_cast<MapMergeCommand>(req.command);
     if (command == STOP_MAP_MERGE)
     {

@@ -49,6 +49,8 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <ros/ros.h>
 #include <boost/thread.hpp>
+#include <ros/timer.h>
+#include <functional>
 
 #include <std_msgs/Int64.h>
 
@@ -85,6 +87,7 @@ private:
   double merging_rate_;
   double discovery_rate_;
   double estimation_rate_;
+  double check_active_rate_;
   double confidence_threshold_;
   std::string robot_map_topic_;
   std::string robot_map_updates_topic_;
@@ -119,6 +122,9 @@ private:
 
 public:
   MapMerge();
+  
+  template<typename FunctionType>
+  void execute(double rate, FunctionType func);
 
   void executetopicSubscribing();
   void executemapMerging();
